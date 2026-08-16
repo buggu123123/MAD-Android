@@ -1,0 +1,92 @@
+============================================================
+PRACTICAL 6 - ASYNCHRONOUS TASK / PROGRESS BAR
+============================================================
+
+-------------------- activity_main.xml --------------------
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:gravity="center">
+    <ProgressBar
+        android:id="@+id/progressBar"
+        style="@android:style/Widget.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="100"
+        android:progress="0"
+        android:indeterminate="false" />
+    <TextView
+        android:id="@+id/tvProgress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Progress: 0%"
+        android:layout_marginTop="20dp" />
+    <Button
+        android:id="@+id/btnStart"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Start Task"
+        android:layout_marginTop="20dp" />
+</LinearLayout>
+
+-------------------- MainActivity.java --------------------
+
+package com.example.progressbardemo;
+
+import android.os.Bundle;
+import android.os.Handler;
+import android.widget.Button;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import androidx.appcompat.app.AppCompatActivity;
+
+public class MainActivity extends AppCompatActivity {
+    private ProgressBar progressBar;
+    private TextView tvProgress;
+    private Button btnStart;
+    private int progressStatus = 0;
+    private Handler handler = new Handler();
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        progressBar = findViewById(R.id.progressBar);
+        tvProgress = findViewById(R.id.tvProgress);
+        btnStart = findViewById(R.id.btnStart);
+
+        btnStart.setOnClickListener(v -> startTask());
+    }
+
+    private void startTask() {
+        progressStatus = 0;
+        progressBar.setProgress(progressStatus);
+        tvProgress.setText("Progress: 0%");
+
+        new Thread(() -> {
+            while (progressStatus < 100) {
+                progressStatus++;
+
+                handler.post(() -> {
+                    progressBar.setProgress(progressStatus);
+                    tvProgress.setText("Progress: " + progressStatus + "%");
+                });
+
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            handler.post(() ->
+                tvProgress.setText("Task Completed Successfully!")
+            );
+        }).start();
+    }
+}
