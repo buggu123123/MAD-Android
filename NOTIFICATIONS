@@ -1,0 +1,578 @@
+============================================================
+PRACTICAL 8 - NOTIFICATIONS
+============================================================
+
+Question:
+Develop an android application that asks for upper bound and
+lower bound value of a range. The application should list out
+prime numbers existing between specified range on screen
+(utilize service running in background for searching prime
+numbers). Upon completion of operation, application should
+prompt the user through a notification.
+
+
+-------------------- AndroidManifest.xml --------------------
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.primerange">
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:allowBackup="true"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.PrimeRange">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+
+        </activity>
+
+        <service
+            android:name=".PrimeService"
+            android:exported="false" />
+
+    </application>
+</manifest>
+
+
+-------------------- activity_main.xml --------------------
+
+<?xml version="1.0" encoding="utf-8"?>
+
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <EditText
+            android:id="@+id/etLower"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number"
+            android:hint="Lower bound (e.g., 2)" />
+
+        <EditText
+            android:id="@+id/etUpper"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:inputType="number"
+            android:hint="Upper bound (e.g., 100000)" />
+
+        <Button
+            android:id="@+id/btnStart"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Find Primes" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Status: Idle" />
+
+        <TextView
+            android:id="@+id/tvResults"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:padding="8dp"
+            android:background="#EEEEEE"
+            android:textIsSelectable="true" />
+
+    </LinearLayout>
+</ScrollView>
+
+
+-------------------- MainActivity.java --------------------
+
+package com.example.primerange;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import android.Manifest;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.*;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.TextView;
+import android.widget.Toast;
+
+public class MainActivity extends AppCompatActivity {
+
+    private static final int REQ_NOTIF = 1001;
+    private EditText etLower, etUpper;
+    private TextView tvStatus, tvResults;
+
+    private final ResultReceiver receiver =
+        new ResultReceiver(new Handler(Looper.getMainLooper())) {
+
+        @Override
+        protected void onReceiveResult(
+            int resultCode,
+            Bundle resultData) {
+
+            if (resultCode == PrimeService.RESULT_PROGRESS) {
+
+                int checked = resultData.getInt("checked");
+                int total = resultData.getInt("total");
+
+                tvStatus.setText(
+                    "Status: Checking " + checked + " / " + total
+                );
+
+            } else if (resultCode == PrimeService.RESULT_PRIME_FOUND) {
+
+                int prime = resultData.getInt("prime");
+                appendPrime(prime);
+
+            } else if (resultCode == PrimeService.RESULT_DONE) {
+
+                int count = resultData.getInt("count");
+
+                tvStatus.setText(
+                    "Status: Completed. Found " + count + " primes."
+                );
+
+                Toast.makeText(
+                    MainActivity.this,
+                    "Prime search completed!",
+                    Toast.LENGTH_SHORT
+                ).show();
+
+            } else if (resultCode == PrimeService.RESULT_ERROR) {
+
+                String msg = resultData.getString("error");
+
+                tvStatus.setText("Status: Error");
+
+                Toast.makeText(
+                    MainActivity.this,
+                    msg,
+                    Toast.LENGTH_LONG
+                ).show();
+            }
+        }
+    };
+
+    private void appendPrime(int prime) {
+
+        String existing = tvResults.getText().toString();
+
+        if (existing.isEmpty()) {
+            tvResults.setText(String.valueOf(prime));
+        } else {
+            tvResults.append(", " + prime);
+        }
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+
+        super.onCreate(savedInstanceState);
+
+        setContentView(R.layout.activity_main);
+
+        etLower = findViewById(R.id.etLower);
+        etUpper = findViewById(R.id.etUpper);
+        tvStatus = findViewById(R.id.tvStatus);
+        tvResults = findViewById(R.id.tvResults);
+
+        Button btnStart = findViewById(R.id.btnStart);
+
+        maybeRequestNotificationPermission();
+
+        btnStart.setOnClickListener(v -> startPrimeSearch());
+    }
+
+    private void startPrimeSearch() {
+
+        String lowStr =
+            etLower.getText().toString().trim();
+
+        String upStr =
+            etUpper.getText().toString().trim();
+
+        if (lowStr.isEmpty() || upStr.isEmpty()) {
+
+            Toast.makeText(
+                this,
+                "Please enter both bounds.",
+                Toast.LENGTH_SHORT
+            ).show();
+
+            return;
+        }
+
+        long lower = Long.parseLong(lowStr);
+        long upper = Long.parseLong(upStr);
+
+        if (lower < 2)
+            lower = 2;
+
+        if (upper < lower) {
+
+            Toast.makeText(
+                this,
+                "Upper bound must be ≥ lower bound.",
+                Toast.LENGTH_SHORT
+            ).show();
+
+            return;
+        }
+
+        tvStatus.setText("Status: Running…");
+        tvResults.setText("");
+
+        Intent intent = new Intent(this, PrimeService.class);
+
+        intent.putExtra("lower", lower);
+        intent.putExtra("upper", upper);
+        intent.putExtra("receiver", receiver);
+
+        startService(intent);
+    }
+
+    private void maybeRequestNotificationPermission() {
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+
+            if (checkSelfPermission(
+                    Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+
+                requestPermissions(
+                    new String[]{
+                        Manifest.permission.POST_NOTIFICATIONS
+                    },
+                    REQ_NOTIF
+                );
+            }
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(
+        int requestCode,
+        @NonNull String[] permissions,
+        @NonNull int[] grantResults) {
+
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        );
+
+        if (requestCode == REQ_NOTIF &&
+            (grantResults.length == 0 ||
+             grantResults[0] != PackageManager.PERMISSION_GRANTED)) {
+
+            Toast.makeText(
+                this,
+                "Notifications permission denied; completion alert may be silent.",
+                Toast.LENGTH_LONG
+            ).show();
+        }
+    }
+}
+
+
+-------------------- PrimeService.java --------------------
+
+package com.example.primerange;
+
+import android.app.*;
+import android.content.Context;
+import android.content.Intent;
+import android.os.*;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
+
+public class PrimeService extends Service {
+
+    public static final int RESULT_PROGRESS = 1;
+    public static final int RESULT_PRIME_FOUND = 2;
+    public static final int RESULT_DONE = 3;
+    public static final int RESULT_ERROR = 4;
+
+    private static final String CHANNEL_ID = "prime_channel_id";
+
+    @Override
+    public void onCreate() {
+
+        super.onCreate();
+
+        createNotificationChannel();
+    }
+
+    @Override
+    public int onStartCommand(
+        Intent intent,
+        int flags,
+        int startId) {
+
+        long lower =
+            intent.getLongExtra("lower", 2);
+
+        long upper =
+            intent.getLongExtra("upper", 2);
+
+        ResultReceiver receiver =
+            intent.getParcelableExtra("receiver");
+
+        new Thread(() -> {
+
+            try {
+
+                runPrimeSearch(
+                    lower,
+                    upper,
+                    receiver
+                );
+
+                postCompletionNotification(
+                    lower,
+                    upper
+                );
+
+            } catch (Exception e) {
+
+                if (receiver != null) {
+
+                    Bundle b = new Bundle();
+
+                    b.putString(
+                        "error",
+                        e.getMessage()
+                    );
+
+                    receiver.send(
+                        RESULT_ERROR,
+                        b
+                    );
+                }
+
+            } finally {
+
+                stopSelf(startId);
+            }
+
+        }).start();
+
+        return START_NOT_STICKY;
+    }
+
+    private void runPrimeSearch(
+        long lower,
+        long upper,
+        ResultReceiver receiver) {
+
+        int total =
+            (int) Math.max(
+                0,
+                upper - lower + 1
+            );
+
+        int checked = 0;
+        int found = 0;
+
+        for (long n = lower; n <= upper; n++) {
+
+            if (isPrime(n)) {
+
+                found++;
+
+                if (receiver != null) {
+
+                    Bundle primeBundle =
+                        new Bundle();
+
+                    primeBundle.putInt(
+                        "prime",
+                        (int) n
+                    );
+
+                    receiver.send(
+                        RESULT_PRIME_FOUND,
+                        primeBundle
+                    );
+                }
+            }
+
+            checked++;
+
+            if (receiver != null &&
+                checked % 200 == 0) {
+
+                Bundle prog =
+                    new Bundle();
+
+                prog.putInt(
+                    "checked",
+                    checked
+                );
+
+                prog.putInt(
+                    "total",
+                    total
+                );
+
+                receiver.send(
+                    RESULT_PROGRESS,
+                    prog
+                );
+            }
+        }
+
+        if (receiver != null) {
+
+            Bundle done =
+                new Bundle();
+
+            done.putInt(
+                "count",
+                found
+            );
+
+            receiver.send(
+                RESULT_DONE,
+                done
+            );
+        }
+    }
+
+    private boolean isPrime(long n) {
+
+        if (n < 2)
+            return false;
+
+        if (n % 2 == 0)
+            return n == 2;
+
+        if (n % 3 == 0)
+            return n == 3;
+
+        long limit =
+            (long) Math.sqrt(n);
+
+        for (long i = 5;
+             i <= limit;
+             i += 6) {
+
+            if (n % i == 0 ||
+                n % (i + 2) == 0) {
+
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void postCompletionNotification(
+        long lower,
+        long upper) {
+
+        Context ctx = this;
+
+        Intent openAppIntent =
+            new Intent(ctx, MainActivity.class);
+
+        openAppIntent.setFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK |
+            Intent.FLAG_ACTIVITY_CLEAR_TASK
+        );
+
+        PendingIntent pendingIntent =
+            PendingIntent.getActivity(
+                ctx,
+                0,
+                openAppIntent,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                    ? PendingIntent.FLAG_IMMUTABLE |
+                      PendingIntent.FLAG_UPDATE_CURRENT
+                    : PendingIntent.FLAG_UPDATE_CURRENT
+            );
+
+        Notification notification =
+            new NotificationCompat.Builder(
+                ctx,
+                CHANNEL_ID
+            )
+            .setSmallIcon(
+                android.R.drawable.ic_dialog_info
+            )
+            .setContentTitle(
+                "Prime search finished"
+            )
+            .setContentText(
+                "Completed for range " +
+                lower + " to " + upper
+            )
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build();
+
+        NotificationManagerCompat
+            .from(ctx)
+            .notify(
+                (int) System.currentTimeMillis(),
+                notification
+            );
+    }
+
+    private void createNotificationChannel() {
+
+        if (Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.O) {
+
+            String name =
+                "Prime Notifications";
+
+            String desc =
+                "Notifies when prime search completes";
+
+            int importance =
+                NotificationManager.IMPORTANCE_DEFAULT;
+
+            NotificationChannel channel =
+                new NotificationChannel(
+                    CHANNEL_ID,
+                    name,
+                    importance
+                );
+
+            channel.setDescription(desc);
+
+            NotificationManager nm =
+                getSystemService(
+                    NotificationManager.class
+                );
+
+            if (nm != null)
+                nm.createNotificationChannel(channel);
+        }
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+}
