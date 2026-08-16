@@ -1,0 +1,87 @@
+============================================================
+PRACTICAL 5 - HANDLER AND THREADS
+============================================================
+
+-------------------- activity_main.xml --------------------
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="20dp">
+    <TextView
+        android:id="@+id/tvCounter"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="0"
+        android:textSize="48sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="30dp" />
+    <Button
+        android:id="@+id/btnStart"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Start" />
+    <Button
+        android:id="@+id/btnStop"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Stop"
+        android:layout_marginTop="20dp" />
+</LinearLayout>
+
+-------------------- MainActivity.java --------------------
+
+package com.example.p5;
+
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.widget.Button;
+import android.widget.TextView;
+import androidx.appcompat.app.AppCompatActivity;
+
+public class MainActivity extends AppCompatActivity {
+    private TextView tvCounter;
+    private Button btnStart, btnStop;
+    private Handler handler;
+    private int counter = 0;
+    private boolean isRunning = false;
+    private Runnable runnable;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        tvCounter = findViewById(R.id.tvCounter);
+        btnStart = findViewById(R.id.btnStart);
+        btnStop = findViewById(R.id.btnStop);
+        handler = new Handler(Looper.getMainLooper());
+
+        runnable = new Runnable() {
+            @Override
+            public void run() {
+                if (isRunning) {
+                    counter++;
+                    tvCounter.setText(String.valueOf(counter));
+                    handler.postDelayed(this, 1000);
+                }
+            }
+        };
+
+        btnStart.setOnClickListener(v -> {
+            if (!isRunning) {
+                isRunning = true;
+                handler.post(runnable);
+            }
+        });
+
+        btnStop.setOnClickListener(v -> {
+            isRunning = false;
+            handler.removeCallbacks(runnable);
+        });
+    }
+}
